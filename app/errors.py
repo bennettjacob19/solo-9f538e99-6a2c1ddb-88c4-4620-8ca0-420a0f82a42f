@@ -17,3 +17,15 @@ class NotFoundError(AppError):
 class ConflictError(AppError):
     def __init__(self, message: str):
         super().__init__(409, message)
+
+
+class ValidationError(AppError):
+    def __init__(self, message: str):
+        super().__init__(400, message)
+
+
+class StorageError(AppError):
+    """A write failed; the caller can be sure no state was changed."""
+
+    def __init__(self, message: str):
+        super().__init__(500, message)

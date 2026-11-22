@@ -17,6 +17,12 @@ from .models import (
     RestartResult,
     RotationCreate,
     RotationOut,
+    RosterImportCreate,
+    RosterImportOut,
+    RosterImportSummary,
+    RosterOut,
+    RosterPageOut,
+    RosterPageSubmit,
     ServiceAccountCreate,
     ServiceAccountOut,
     ServiceAccountSummary,
@@ -199,6 +205,74 @@ def confirm(rotation_id: int, pod_id: int, body: ConfirmRequest):
 )
 def verify_token(body: VerifyRequest):
     return app.state.service.verify_token(body.token)
+
+
+# -------------------------------------------------------------- roster import
+
+@app.post(
+    "/service-accounts/{sa_id}/roster-imports",
+    response_model=RosterImportOut,
+    status_code=status.HTTP_201_CREATED,
+    tags=["roster"],
+    summary="开一轮名册导入（关闭该账号尚未收齐的旧一轮）",
+)
+def start_roster_import(sa_id: int, body: RosterImportCreate | None = None):
+    return app.state.service.start_roster_import(
+        sa_id, body.namespace if body else None
+    )
+
+
+@app.post(
+    "/roster-imports/{import_id}/pages",
+    response_model=RosterPageOut,
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["roster"],
+    summary="逐页提交 PodList（单页 ≤100 Pod），收齐同一 resourceVersion 后生效",
+)
+def submit_roster_page(import_id: int, body: RosterPageSubmit):
+    return app.state.service.submit_roster_page(
+        import_id, body.continue_token, body.pod_list
+    )
+
+
+@app.post(
+    "/roster-imports/{import_id}/activate",
+    response_model=RosterImportOut,
+    tags=["roster"],
+    summary="显式启用已收齐的导入（缺页/混版/被更新一轮超越时拒绝）",
+)
+def activate_roster_import(import_id: int):
+    return app.state.service.activate_roster_import(import_id)
+
+
+@app.get(
+    "/roster-imports",
+    response_model=list[RosterImportSummary],
+    tags=["roster"],
+    summary="列出名册导入轮次（可按服务账号过滤）",
+)
+def list_roster_imports(sa_id: int | None = None):
+    return app.state.service.list_roster_imports(sa_id)
+
+
+@app.get(
+    "/roster-imports/{import_id}",
+    response_model=RosterImportOut,
+    tags=["roster"],
+    summary="查询导入轮次：已收页数、下一步续页标记、是否已生效",
+)
+def get_roster_import(import_id: int):
+    return app.state.service.get_roster_import(import_id)
+
+
+@app.get(
+    "/service-accounts/{sa_id}/roster",
+    response_model=RosterOut,
+    tags=["roster"],
+    summary="查看生效名册（成员/已退出成员）与正在收取的导入",
+)
+def get_roster(sa_id: int):
+    return app.state.service.get_roster(sa_id)
 
 
 @app.get("/health", response_model=Message, tags=["meta"])

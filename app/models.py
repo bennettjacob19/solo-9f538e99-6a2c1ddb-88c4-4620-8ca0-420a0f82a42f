@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field
 
 GenStatus = Literal["active", "superseded", "revoked"]
 RotationStatus = Literal["pending", "completed", "superseded", "expired"]
+ImportStatus = Literal["collecting", "active", "superseded"]
+PodSource = Literal["manual", "roster"]
 
 
 # ---------- requests ----------
@@ -36,6 +38,37 @@ class VerifyRequest(BaseModel):
     token: str = Field(min_length=1)
 
 
+# ---------- roster import ----------
+
+class RosterImportCreate(BaseModel):
+    """Open a roster import round.
+
+    ``namespace`` is optional: when omitted the service account's namespace is
+    used. Pages are accepted with the same continuation marker the caller got
+    from the previous page (empty for the first page).
+    """
+
+    namespace: Optional[str] = Field(
+        default=None, max_length=253, examples=["monitoring"]
+    )
+
+
+class RosterPageSubmit(BaseModel):
+    """One page of ``kubectl get pods -o json`` output.
+
+    ``pod_list`` is the PodList object itself, including the ``metadata`` map
+    that carries ``resourceVersion`` and ``continue``. ``continue_token`` is
+    the marker the caller used to fetch this page (empty on the first page)
+    and must equal the previous page's ``metadata.continue``.
+    """
+
+    continue_token: str = Field(
+        default="",
+        description="续页标记：取该页时使用的 continue 值（首页为空）",
+    )
+    pod_list: dict
+
+
 # ---------- responses ----------
 
 class TokenGenerationOut(BaseModel):
@@ -53,6 +86,10 @@ class PodOut(BaseModel):
     id: int
     name: str
     namespace: str
+    uid: Optional[str] = None
+    source: PodSource = "manual"
+    retired: bool = False
+    retired_reason: str = ""
     alive: bool
     last_committed_gen: int
     created_at: float
@@ -65,6 +102,7 @@ class ServiceAccountOut(BaseModel):
     namespace: str
     description: str
     current_gen: int
+    active_roster_id: Optional[int] = None
     created_at: float
     generations: list[TokenGenerationOut]
     pods: list[PodOut]
@@ -76,6 +114,7 @@ class ServiceAccountSummary(BaseModel):
     namespace: str
     description: str
     current_gen: int
+    active_roster_id: Optional[int] = None
     created_at: float
 
 
@@ -110,6 +149,57 @@ class VerifyResponse(BaseModel):
     service_account: Optional[str] = None
     namespace: Optional[str] = None
     generation: Optional[int] = None
+
+
+class RosterImportOut(BaseModel):
+    id: int
+    sa_id: int
+    status: ImportStatus
+    resource_version: Optional[str] = None
+    page_count: int
+    pod_count: int
+    # The continuation marker the next page must be fetched with. Empty means
+    # the list has been fully collected and may be activated.
+    next_continue: str
+    collected_complete: bool
+    created_at: float
+    activated_at: Optional[float] = None
+    finished_reason: str
+
+
+class RosterImportSummary(BaseModel):
+    id: int
+    sa_id: int
+    status: ImportStatus
+    resource_version: Optional[str] = None
+    page_count: int
+    pod_count: int
+    created_at: float
+    activated_at: Optional[float] = None
+    finished_reason: str
+
+
+class RosterPageOut(BaseModel):
+    import_: RosterImportOut = Field(alias="import")
+    accepted: bool
+    message: str
+
+
+class RosterMemberOut(BaseModel):
+    pod: PodOut
+    uid: str
+
+
+class RosterOut(BaseModel):
+    """Effective roster (or the in-flight collection round when not active)."""
+
+    service_account_id: int
+    active_roster_id: Optional[int] = None
+    active_since: Optional[float] = None
+    source: Literal["manual", "roster"] = "manual"
+    members: list[PodOut]
+    retired: list[PodOut]
+    pending_import: Optional[RosterImportOut] = None
 
 
 class Message(BaseModel):
