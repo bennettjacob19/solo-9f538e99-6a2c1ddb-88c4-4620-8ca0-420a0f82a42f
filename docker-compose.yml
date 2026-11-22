@@ -1,0 +1,29 @@
+services:
+  token-rotation-api:
+    build: .
+    image: sa-token-rotation-api:latest
+    container_name: sa-token-rotation-api
+    ports:
+      - "8000:8000"
+    environment:
+      # SQLite database file location (inside the persisted volume)
+      TOKEN_ROTATION_DB: /data/tokens.db
+      # How often the background sweeper expires grace-period tokens (seconds)
+      SWEEP_INTERVAL_SECONDS: "1"
+    volumes:
+      - token-rotation-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).status==200 else 1)",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  token-rotation-data:
